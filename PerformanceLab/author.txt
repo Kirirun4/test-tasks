@@ -1,2 +1,0 @@
-Author: Savinyh Kirill
-Language: Java
