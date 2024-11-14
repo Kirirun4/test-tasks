@@ -1,0 +1,202 @@
+/*Задача № 1. Написать запрос, выводящий имя и фамилию самых бедных клиентов - среди замужных женщин, 
+ не проживающих ни в Японии, ни в Бразилии, ни в Италии. Богатство определяется по кредитному лимиту.
+ [Отсортировать по CUST_LAST_NAME]. */
+SELECT CUST_FIRST_NAME AS "Имя", CUST_LAST_NAME AS "Фамилия", CUST_CREDIT_LIMIT AS "Кредитный лимит", 
+	CUST_MARITAL_STATUS AS "Семейное положение", COUNTRY AS "Страна"
+FROM SH.CUSTOMERS 
+WHERE CUST_GENDER = 'F' 
+	AND CUST_MARITAL_STATUS LIKE '%arried' 
+	AND COUNTRY <> 'Japan' AND COUNTRY <> 'Italy' AND COUNTRY <> 'Brazil' 
+	AND CUST_CREDIT_LIMIT = (SELECT MIN(CUST_CREDIT_LIMIT) FROM SH.CUSTOMERS) 
+ORDER BY CUST_LAST_NAME;
+
+
+/*Задача № 2. Написать запрос, выводящий клиента с самым длинным домашним адресом, чей телефонный 
+ номер заканчивается на 77. Вывести результат в одном столбце, в формате “Name: [cust_first_name] 
+ [cust_last_name]; city: [cust_city]; address: [cust_street_address]; number:[cust_main_phone_number]; 
+ email: [cust_email]; ”. (всё, что обернуто в [] – названия полей (столбцов) таблицы).*/
+SELECT 'Name: ' || CUST_FIRST_NAME || ' ' || CUST_LAST_NAME || '; ' ||
+	'city: ' || CUST_CITY || '; ' ||
+	'address: ' || CUST_STREET_ADDRESS || '; ' ||
+	'number: ' || CUST_MAIN_PHONE_NUMBER || '; ' ||
+	'email: ' || CUST_EMAIL AS info
+FROM SH.CUSTOMERS 
+WHERE CUST_MAIN_PHONE_NUMBER LIKE '_%77' 
+ORDER BY LENGTH(CUST_STREET_ADDRESS) DESC 
+FETCH FIRST 1 ROW ONLY;
+--В строку я смог вывести, но как в столбец вывести не понимаю.
+
+
+/*Задача № 3. Написать запрос, выводящий всех клиентов, которые купили самый дешевый продукт 
+(цецена считается от цены продажи - cust_list_price) в субкатегории 'Sweaters - Men' или 
+'Sweaters - Women' (связка таблиц CUSTOMERS -> SALES -> PRODUCTS), среди тех, кто родился 
+ позже 1980 года, вывод должен быть отсортирован по cust_id.*/
+WITH min_ps AS (
+SELECT s.CUST_ID, c.CUST_FIRST_NAME, c.CUST_LAST_NAME, MIN(p.PROD_LIST_PRICE) AS min_price, c.CUST_YEAR_OF_BIRTH, p.PROD_SUBCATEGORY
+FROM SH.CUSTOMERS c 
+JOIN SH.SALES s ON c.CUST_ID = s.CUST_ID 
+JOIN SH.PRODUCTS p ON s.PROD_ID = p.PROD_ID 
+WHERE p.PROD_SUBCATEGORY IN ('Sweaters - Men', 'Sweaters - Women')
+	AND c.CUST_YEAR_OF_BIRTH > 1980
+GROUP BY s.CUST_ID, c.CUST_FIRST_NAME, c.CUST_LAST_NAME, c.CUST_YEAR_OF_BIRTH, p.PROD_SUBCATEGORY
+ORDER BY s.CUST_ID)
+SELECT *
+FROM min_ps
+WHERE min_price = (SELECT MIN(min_price) FROM min_ps);
+
+
+/*Задача № 4. Написать запрос, выводящий всех клиентов-мужчин с уровнем дохода "D", у которых 
+не заполнено поле "семейное положение" и которые проживают в США или Германии (с использованием EXISTS). 
+Отсортировать по cust_id.*/
+SELECT CUST_FIRST_NAME, CUST_LAST_NAME, CUST_MARITAL_STATUS, CUST_INCOME_LEVEL, COUNTRY, CUST_GENDER 
+FROM SH.CUSTOMERS c
+WHERE NOT EXISTS(
+				SELECT NULL 
+				FROM SH.CUSTOMERS c2
+				WHERE c.CUST_MARITAL_STATUS = c2.CUST_MARITAL_STATUS
+				)
+	  AND CUST_INCOME_LEVEL = 'D: 70,000 - 89,999'
+	  AND CUST_GENDER = 'M'
+	  AND (COUNTRY = 'United States of America' OR COUNTRY = 'Germany')
+ORDER BY cust_id;
+
+
+/*Задача № 5. Написать запрос, выводящий среднюю сумму покупки (сумма покупки является произведением 
+цены товара (prod_list_price) на количество проданного товара (quantity_sold)) в каждой стране, 
+полное название страны. Отсортировать в порядке убывания средней суммы.*/
+SELECT c.COUNTRY, ROUND(AVG(p.PROD_LIST_PRICE * s.QUANTITY_SOLD), 2) AS avg_sum 
+FROM SH.PRODUCTS p 
+JOIN SH.SALES s ON s.PROD_ID = p.PROD_ID 
+JOIN SH.CUSTOMERS c ON c.CUST_ID = s.CUST_ID 
+GROUP BY c.COUNTRY 
+ORDER BY avg_sum DESC;
+
+
+/*Задача № 6. Написать запрос, выводящий "популярность" почтовых доменов клиентов, т.е. количество 
+ клиентов с почтой в каждом из доменов.*/
+SELECT SUBSTR(CUST_EMAIL, INSTR(CUST_EMAIL, '@') +1) AS domen, COUNT(*) AS count_domen 
+FROM SH.CUSTOMERS 
+GROUP BY SUBSTR(CUST_EMAIL, INSTR(CUST_EMAIL, '@') +1);
+
+
+/*Задача № 7. Написать запрос, выводящий распределение суммы проданных товаров в единицах 
+ (quantity_sold) категории "Men" по странам (т.е. распределение по странам, в которых проживают клиенты), 
+ в конечной выборке оставить те страны, в которых общее количество проданных товаров в единицах выше, 
+ чем средняя сумма проданных товаров в единицах этой категории в стране (по всему миру). 
+ Упорядочить по полному названию стран.*/
+WITH all_country AS (
+SELECT c.COUNTRY, SUM(s.QUANTITY_SOLD) AS sum_products--, p.PROD_CATEGORY
+FROM SH.CUSTOMERS c 
+JOIN SH.SALES s ON c.CUST_ID = s.CUST_ID 
+JOIN SH.PRODUCTS p ON s.PROD_ID = p.PROD_ID 
+WHERE p.PROD_CATEGORY LIKE 'Men' 
+GROUP BY c.COUNTRY--, p.PROD_CATEGORY
+ORDER BY c.COUNTRY)
+SELECT *
+FROM all_country
+WHERE sum_products > (SELECT AVG(sum_products) FROM all_country);
+
+
+/*Задача № 8. Написать запрос, выводящий процентное соотношение мужчин и женщин, 
+ проживающих в каждой стране, отсортированное по названию страны в алфавитном порядке. 
+ Столбцы в выводе должны быть такими: «Страна», «% мужчин», «% женщин» [использовать WITH]. 
+ Упорядочить по полному названию стран.*/
+WITH count_g AS (
+SELECT COUNTRY, 
+	SUM(CASE WHEN CUST_GENDER = 'M' THEN 1 ELSE 0 END) AS male_count,
+	SUM(CASE WHEN CUST_GENDER = 'F' THEN 1 ELSE 0 END) AS female_count,
+	COUNT(*) AS all_count 
+FROM SH.CUSTOMERS
+GROUP BY COUNTRY)
+SELECT COUNTRY AS "Страна",
+	ROUND((male_count / all_count) * 100, 2) || '%' AS "% мужчин",
+	ROUND((female_count / all_count) * 100, 2) || '%' AS "% женщин"
+FROM count_g
+ORDER BY COUNTRY;
+
+
+/*Задача № 9. Написать запрос, выводящий максимальное суммарное количество проданных единиц 
+ товара (quantity_sold) за день для каждого продукта (т.е. продукты в выводе не должны повторяться). 
+ Запрос должен выводить TOP 20 строк, отсортированных по убыванию количества проданных единиц товара 
+ (Столбцы должны быть такими: "Макс покуп/день", prod_name) [Под первым столбцом подразумевается 
+ объединение в одно поле количества покупок и последней даты, за которую сделаны эти покупки].*/
+WITH daily_sales AS ( 
+SELECT SUM(s.QUANTITY_SOLD) AS quantity_sold, TO_CHAR(s.TIME_ID, 'DD-MM-YYYY') AS sale_date, p.PROD_NAME 
+FROM SH.SALES s 
+JOIN SH.PRODUCTS p ON s.PROD_ID = p.PROD_ID 
+GROUP BY p.PROD_NAME, s.TIME_ID), 
+max_daily_sales AS ( 
+SELECT MAX(quantity_sold) AS max_quantity_sold, PROD_NAME, sale_date
+FROM daily_sales 
+GROUP BY PROD_NAME, sale_date) 
+SELECT mds.max_quantity_sold || ' / ' || ds.sale_date AS "Макс покуп/день", ds.PROD_NAME 
+FROM max_daily_sales mds 
+JOIN daily_sales ds ON mds.PROD_NAME = ds.PROD_NAME AND mds.max_quantity_sold = ds.quantity_sold 
+ORDER BY mds.max_quantity_sold DESC 
+FETCH FIRST 20 ROWS ONLY;
+
+
+/*Задача № 10. Написать запрос, выводящий максимальное суммарное количество проданных единиц товара 
+ за день для каждой категории продуктов. Отсортировать по убыванию количества. 
+ (Столбцы должны быть такими: "Макс за день", prod_category). [Под первым столбцом подразумевается одно число].*/
+WITH daily_sales AS (
+SELECT SUM(s.QUANTITY_SOLD) AS quantity_sold, s.TIME_ID, p.PROD_CATEGORY 
+FROM SH.SALES s 
+JOIN SH.PRODUCTS p ON s.PROD_ID = p.PROD_ID 
+GROUP BY p.PROD_CATEGORY, s.TIME_ID)
+SELECT MAX(quantity_sold) AS "Макс за день", PROD_CATEGORY 
+FROM daily_sales
+GROUP BY PROD_CATEGORY 
+ORDER BY MAX(quantity_sold);
+
+
+/*Задача № 11. Написать запрос, который создаст таблицу с именем sales_[имя пользователя в ОС]_[Ваше имя]_[Ваша фамилия], 
+ содержащую строки из таблицы sh.sales за один пиковый месяц. (Т.е. месяц, за который получена максимальная выручка). 
+ Показать все поля таблицы в порядке возрастания дат.*/
+CREATE TABLE sales_Kirill_Savinyh AS 
+WITH get_month AS (
+SELECT TO_CHAR(TIME_ID, 'YYYY-MM') AS peak_month
+FROM SH.SALES
+GROUP BY TO_CHAR(TIME_ID, 'YYYY-MM')
+ORDER BY SUM(AMOUNT_SOLD) DESC
+FETCH FIRST 1 ROW ONLY)
+SELECT *
+FROM SH.SALES
+WHERE TO_CHAR(TIME_ID, 'YYYY-MM') = (SELECT peak_month FROM get_month)
+ORDER BY TIME_ID;
+--Без понятия, как залезть в ОС для выноса ника.
+
+--Открыть таблицу:
+SELECT * FROM sales_Kirill_Savinyh;
+
+
+/*Задача № 12. Написать запрос, который для созданной в задании 11 таблицы изменит значение поля time_id на 
+формат 'DD.MM.YYYY HH24:MI:SS' (см. NLS_DATE_FORMAT). Значение hh24:mm:ss должно выбираться случайным образом. 
+Сохранить сделанные изменения. Показать все поля таблицы в порядке возрастания дат.
+SELECT dbms_random.value FROM DUAL возвращает случайное значение от 0 до 1;*/
+UPDATE sales_Kirill_Savinyh 
+SET TIME_ID = TO_TIMESTAMP( 
+TO_CHAR(TIME_ID, 'DD.MM.YYYY') || ' ' || 
+TRUNC(DBMS_RANDOM.VALUE(0, 24)) || ':' || 
+TRUNC(DBMS_RANDOM.VALUE(0, 60)) || ':' || 
+TRUNC(DBMS_RANDOM.VALUE(0, 60)) , 
+'DD.MM.YYYY HH24:MI:SS');
+
+--Открыть таблицу:
+SELECT * FROM sales_Kirill_Savinyh;
+
+
+/*Задача № 13. Написать запрос, выводящий почасовую разбивку количества операций продажи для Вашей таблицы.*/
+SELECT TO_CHAR(time_id, 'HH24') AS hour,
+       COUNT(*) AS op_in_hour
+FROM sales_Kirill_Savinyh
+GROUP BY TO_CHAR(time_id, 'HH24')
+ORDER BY hour;
+
+
+/*Задача № 14. Написать запрос, который удалит созданную в задании 11 таблицу. Сохранить сделанные изменения.*/
+DROP TABLE sales_Kirill_Savinyh;
+
+
+
+SELECT SYSDATE + 1 AS tomorrow FROM dual;
