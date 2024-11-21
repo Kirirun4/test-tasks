@@ -3,7 +3,7 @@
 Ссылка на docker образ newmock:
 https://hub.docker.com/repository/docker/kirirun4/newmock
 Ссылка на docker образ jenkins с простыми задачами (настройки: user/pass - admin, port - 4040):
-https://hub.docker.com/repository/docker/kirirun4/jenkins/general
+https://hub.docker.com/repository/docker/kirirun4/jenkins
 
 ##Основная часть:
 Запрос:
